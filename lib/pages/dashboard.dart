@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:hris_mobile/components/navbar.dart';
 import './notifications.dart';
 import './settings.dart';
 import 'package:hris_mobile/components/snackbar.dart';
 import 'request.dart';
+import 'package:provider/provider.dart';
+import 'package:hris_mobile/services/socket_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -61,27 +64,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 iconPath: 'assets/icons/attendance.svg',
                 label: 'Attendance',
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Attendance clicked')),
-                  );
+                  showCustomSnackBar(context, 'Attendance clicked');
                 },
               ),
               _buildIconCard(
                 iconPath: 'assets/icons/forms.svg',
                 label: 'Forms',
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Forms clicked')),
-                  );
-                },
-              ),
-              _buildIconCard(
-                iconPath: 'assets/icons/payroll.svg',
-                label: 'Payroll',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Payroll clicked')),
-                  );
+                  showCustomSnackBar(context, 'Forms clicked');
                 },
               ),
               _buildIconCard(
@@ -97,52 +87,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               _buildIconCard(
-                iconPath: 'assets/icons/organization.svg',
-                label: 'Organization',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Organization clicked')),
-                  );
-                },
-              ),
-              _buildIconCard(
-                iconPath: 'assets/icons/contacts.svg',
-                label: 'Contacts',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Contacts clicked')),
-                  );
-                },
-              ),
-              _buildIconCard(
-                iconPath: 'assets/icons/password.svg',
-                label: 'Password',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Password clicked')),
-                  );
-                },
-              ),
-              _buildIconCard(
                 iconPath: 'assets/icons/ellipsis.svg',
                 label: 'More',
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('More clicked')),
-                  );
+                  showCustomSnackBar(context, 'More clicked');
                 },
               ),
             ],
           ),
           const SizedBox(height: 30),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 12),
-              child: Image.asset(
-                'assets/images/Cover.jpg',
-                width: double.infinity,
-                fit: BoxFit.cover,
+          GestureDetector(
+            onTap: () {
+              showCustomSnackBar(context, 'Opening EARIST website...');
+              Future.delayed(const Duration(milliseconds: 500), () {
+                launchUrl(Uri.parse('https://earist.edu.ph/'));
+              });
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12),
+                child: Image.asset(
+                  'assets/images/Cover.jpg',
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
           ),
@@ -207,7 +176,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 0:
         return _buildDashboardIcons();
       case 1:
-        return NotificationPage();
+        return const NotificationPage();
       case 3:
         return SettingsPage(
           user: user,
@@ -275,9 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         ElevatedButton.icon(
           onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Clock In clicked')),
-            );
+            showCustomSnackBar(context, 'Clock In clicked');
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color.fromARGB(255, 255, 255, 255),
@@ -303,9 +270,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         ElevatedButton.icon(
           onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Clock Out clicked')),
-            );
+            showCustomSnackBar(context, 'Clock Out clicked');
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color.fromARGB(255, 255, 255, 255),
@@ -338,6 +303,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final profilePic = user['p_pic'] != null
         ? 'http://192.168.99.139:3000/uploads/${user['p_pic']}'
         : null;
+
+    final socketService = Provider.of<SocketService>(context);
+    final hasNewNotifications = socketService.unreadNotifications.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -398,6 +366,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       bottomNavigationBar: Sidebar(
         activeIndex: activeNavIndex,
         onNavItemSelect: handleNavItemSelect,
+        hasNewNotifications: hasNewNotifications,
       ),
     );
   }

@@ -1,8 +1,9 @@
-// ignore_for_file: library_prefixes, deprecated_member_use
+// ignore_for_file: library_prefixes, deprecated_member_use, avoid_print
 
 import 'package:flutter/material.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:hris_mobile/services/socket_service.dart';
+import 'package:provider/provider.dart';
+import 'package:hris_mobile/components/snackbar.dart';
 
 class NotificationPage extends StatefulWidget {
   const NotificationPage({super.key});
@@ -12,95 +13,25 @@ class NotificationPage extends StatefulWidget {
 }
 
 class _NotificationPageState extends State<NotificationPage> {
-  late IO.Socket socket;
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-      FlutterLocalNotificationsPlugin();
-
-  bool isConnected = false;
-  List<Map<String, dynamic>> notifications = [];
-
   @override
   void initState() {
     super.initState();
-    _initSocket();
-    _initLocalNotifications();
-  }
-
-  void _initSocket() {
-    socket = IO.io('http://192.168.99.139:3000', <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': true,
-    });
-
-    socket.onConnect((_) {
-      setState(() => isConnected = true);
-    });
-
-    socket.onDisconnect((_) {
-      setState(() => isConnected = false);
-    });
-
-    socket.on('db_change', (data) {
-      final notification = {
-        'event': data['event'],
-        'payload': data['payload'],
-        'time': DateTime.now().toIso8601String(),
-      };
-
-      setState(() {
-        notifications.insert(0, notification);
-      });
-
-      _showLocalNotification(data['event'], data['payload']);
-    });
-  }
-
-  Future<void> _initLocalNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
-    await flutterLocalNotificationsPlugin.initialize(initSettings);
-  }
-
-  Future<void> _showLocalNotification(String event, dynamic payload) async {
-    final id = DateTime.now().millisecondsSinceEpoch % 100000;
-
-    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'db_channel',
-      'Database Events',
-      channelDescription: 'Notification when the database changes',
-      importance: Importance.max,
-      priority: Priority.high,
-      showWhen: true,
-    );
-
-    final title = event == 'added'
-        ? 'New Record Added'
-        : event == 'updated'
-            ? 'Record Updated'
-            : event == 'deleted'
-                ? 'Record Deleted'
-                : 'Database Change';
-
-    final body = event == 'deleted'
-        ? 'ID: ${payload['id']}'
-        : '${payload['name']} (ID: ${payload['id']})';
-
-    await flutterLocalNotificationsPlugin.show(
-      id,
-      title,
-      body,
-      NotificationDetails(android: androidDetails),
-    );
+    // Access the SocketService in initState, but don't listen to changes here
+    // ignore: unused_local_variable
+    final socketService = Provider.of<SocketService>(context, listen: false);
   }
 
   @override
   void dispose() {
-    socket.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final socketService = Provider.of<SocketService>(context);
+    final notifications = socketService.notifications;
+    final isConnected = socketService.isConnected;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
@@ -113,64 +44,97 @@ class _NotificationPageState extends State<NotificationPage> {
         ],
       ),
       body: notifications.isEmpty
-          ? const Center(
-              child: Text(
-                'No notifications yet.\nWaiting for database events...',
-                textAlign: TextAlign.center,
-              ),
-            )
+          ? (socketService.isLoadingHistorical
+              ? const Center(child: CircularProgressIndicator())
+              : const Center(
+                  child: Text(
+                    'No notifications yet.\nWaiting for leave status updates...',
+                    textAlign: TextAlign.center,
+                  ),
+                ))
           : ListView.builder(
               itemCount: notifications.length,
               itemBuilder: (context, index) {
                 final notif = notifications[index];
-                final time = DateTime.parse(notif['time']);
-                final event = notif['event'];
-                final payload = notif['payload'];
+                final DateTime time = notif['time']; // time is now stored as DateTime in SocketService
+                final String leaveStatus = notif['status'] ?? 'N/A';
+                final String leaveType = notif['leave_type'] ?? 'N/A';
+                final String firstName = notif['f_name'] ?? '';
+                final String lastName = notif['l_name'] ?? '';
+                final bool isRead = notif['isRead'] ?? true; // Default to true if isRead is missing
 
                 IconData icon;
                 Color iconColor;
+                String title = 'Leave Request Status Update'; // Default title
+                String subtitle;
+                String expandedDetails;
 
-                switch (event) {
-                  case 'added':
-                    icon = Icons.add_circle_outline;
+                subtitle = 'Leave request for $firstName $lastName ($leaveType) is now $leaveStatus. • ${_formatTime(time)}';
+
+                expandedDetails = 'Leave Type: $leaveType\nStatus: $leaveStatus\nEmployee: $firstName $lastName\nTime: ${_formatTime(time)}';
+
+                switch (leaveStatus.toLowerCase()) {
+                  case 'approved':
+                    icon = Icons.check_circle_outline;
                     iconColor = Colors.green;
                     break;
-                  case 'updated':
-                    icon = Icons.edit;
-                    iconColor = Colors.orange;
-                    break;
-                  case 'deleted':
-                    icon = Icons.delete_outline;
+                  case 'rejected':
+                    icon = Icons.cancel_outlined;
                     iconColor = Colors.red;
                     break;
+                  case 'pending':
+                    icon = Icons.hourglass_empty;
+                    iconColor = Colors.orange;
+                    break;
                   default:
-                    icon = Icons.notifications_active;
+                    icon = Icons.info_outline;
                     iconColor = Colors.blue;
                 }
 
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: iconColor.withOpacity(0.1),
-                    child: Icon(icon, color: iconColor),
-                  ),
-                  title: Text(
-                    event == 'deleted'
-                        ? 'Record Deleted (ID: ${payload['id']})'
-                        : '${payload['name']} (ID: ${payload['id']})',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${event.toUpperCase()} • ${_formatTime(time)}',
-                    style: TextStyle(color: iconColor, fontSize: 12),
+                return Card(
+                  color: isRead ? Colors.white : Colors.grey[200], // Visual cue for unread
+                  margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                  child: ExpansionTile(
+                    leading: CircleAvatar(
+                      backgroundColor: iconColor.withOpacity(0.1),
+                      child: Icon(icon, color: iconColor),
+                    ),
+                    title: Text(
+                      title,
+                      style: TextStyle(fontWeight: isRead ? FontWeight.normal : FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      subtitle,
+                      style: TextStyle(color: iconColor, fontSize: 12),
+                    ),
+                    onExpansionChanged: (isExpanded) {
+                      if (isExpanded && !isRead) {
+                        socketService.markNotificationAsRead(notif);
+                      }
+                      if (!isExpanded) {
+                        // Optional: Do something when collapsed
+                      }
+                    },
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Text(
+                            expandedDetails,
+                            style: TextStyle(fontSize: 14.0, color: Colors.grey[600]),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          setState(() {
-            notifications.clear();
-          });
+          socketService.clearNotifications();
+          showCustomSnackBar(context, 'Notifications cleared');
         },
         tooltip: 'Clear All',
         child: const Icon(Icons.clear_all),

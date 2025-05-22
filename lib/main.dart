@@ -4,7 +4,6 @@ import '../pages/login.dart';
 import '../pages/dashboard.dart';
 import '../pages/notifications.dart';
 import '../pages/settings.dart';
-import 'forms/leave_form.dart';
 
 void main() => runApp(const EARISTHRIS());
 
@@ -31,7 +30,6 @@ class EARISTHRIS extends StatelessWidget {
               onProfileUpdated: (Map<String, dynamic> updatedUser) {
               },
             ),
-            '/leave_request': (context) => const LeaveRequestScreen(),
           },
         );
       },

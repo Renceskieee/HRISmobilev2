@@ -8,11 +8,13 @@ import 'snackbar.dart';
 class Sidebar extends StatelessWidget {
   final int activeIndex;
   final Function(int) onNavItemSelect;
+  final bool hasNewNotifications;
 
   const Sidebar({
     super.key,
     required this.activeIndex,
     required this.onNavItemSelect,
+    required this.hasNewNotifications,
   });
 
   @override
@@ -32,7 +34,7 @@ class Sidebar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildNavItem(0, 'assets/icons/home.svg'),
-          _buildNavItem(1, 'assets/icons/notification.svg'),
+          _buildNavItem(1, 'assets/icons/notification.svg', hasBadge: hasNewNotifications),
           _buildNavItem(2, 'assets/icons/calendar.svg'),
           _buildNavItem(3, 'assets/icons/profile.svg'),
           _buildLogoutItem(context),
@@ -41,7 +43,7 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildNavItem(int index, String iconPath) {
+  Widget _buildNavItem(int index, String iconPath, {bool hasBadge = false}) {
     bool isActive = activeIndex == index;
 
     return GestureDetector(
@@ -52,18 +54,38 @@ class Sidebar extends StatelessWidget {
           shape: BoxShape.circle,
           color: Colors.transparent,
         ),
-        child: ColorFiltered(
-          colorFilter: ColorFilter.mode(
-            isActive
-                ? const Color.fromRGBO(163, 29, 29, 1)
-                : Colors.black,
-            BlendMode.srcIn,
-          ),
-          child: SvgPicture.asset(
-            iconPath,
-            height: 28,
-            width: 28,
-          ),
+        child: Stack(
+          children: [
+            ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                isActive
+                    ? const Color.fromRGBO(163, 29, 29, 1)
+                    : Colors.black,
+                BlendMode.srcIn,
+              ),
+              child: SvgPicture.asset(
+                iconPath,
+                height: 28,
+                width: 28,
+              ),
+            ),
+            if (hasBadge)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 12,
+                    minHeight: 12,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

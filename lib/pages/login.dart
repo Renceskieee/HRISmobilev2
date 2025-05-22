@@ -1,5 +1,8 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hris_mobile/services/socket_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:developer' as developer;
 import 'dart:convert';
@@ -9,22 +12,8 @@ import 'package:hris_mobile/modals/contact_modal.dart';
 import 'package:hris_mobile/modals/privacy_modal.dart';
 import 'package:hris_mobile/pages/dashboard.dart';
 import 'package:hris_mobile/components/snackbar.dart';
-
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: const LoginScreen(),
-      debugShowCheckedModeBanner: false,
-    );
-  }
-}
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -78,10 +67,18 @@ class LoginScreenState extends State<LoginScreen> {
         final data = json.decode(response.body);
         developer.log('Login successful: ${data['user']}');
 
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('user_id', data['user']['id']);
+        await prefs.setInt('login_time', DateTime.now().millisecondsSinceEpoch);
+
+        // lib/main.dart
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => DashboardScreen(user: data['user']),
+            builder: (context) => ChangeNotifierProvider<SocketService>(
+              create: (_) => SocketService(userId: data['user']['id']), // Make sure userId is passed
+              child: DashboardScreen(user: data['user']),
+            ),
           ),
         );
 
