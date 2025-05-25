@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:hris_mobile/components/navbar.dart';
 import './notifications.dart';
+import './calendar.dart';
 import './settings.dart';
 import 'package:hris_mobile/components/snackbar.dart';
 import 'request.dart';
@@ -177,6 +178,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return _buildDashboardIcons();
       case 1:
         return const NotificationPage();
+      case 2:
+        return const CalendarPage();
       case 3:
         return SettingsPage(
           user: user,

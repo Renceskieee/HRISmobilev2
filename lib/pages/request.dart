@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:hris_mobile/forms/leave_form.dart';
+import 'package:hris_mobile/forms/leave_request.dart';
 import 'package:hris_mobile/forms/payroll_form.dart';
 import 'package:hris_mobile/forms/employment_form.dart';
 import 'package:hris_mobile/components/snackbar.dart';
@@ -50,7 +50,7 @@ class RequestScreen extends StatelessWidget {
         );
       } else if (category == 'Attendance Rectification') {
          // Navigate to Attendance Rectification form if available
-         showCustomSnackBar(context, 'Attendance Rectification clicked (Form not implemented)');
+         showCustomSnackBar(context, 'Attendance Rectification clicked');
       } else if (category == 'Employment and Documentation Request') {
         Navigator.push(
           context,

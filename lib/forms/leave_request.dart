@@ -135,7 +135,6 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Leave Type
               DropdownButtonFormField<String>(
                 decoration: const InputDecoration(
                   labelText: 'Type of Leave',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../modals/logout_modal.dart';
 import 'snackbar.dart';
+import '../pages/login.dart';
 
 class Sidebar extends StatelessWidget {
   final int activeIndex;
@@ -95,7 +96,10 @@ class Sidebar extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         showLogoutConfirmationDialog(context, () {
-          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+          );
           WidgetsBinding.instance.addPostFrameCallback((_) {
             showCustomSnackBar(context, 'Your account was logged out');
           });
