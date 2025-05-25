@@ -106,6 +106,19 @@ app.put('/api/users/:id', upload.single('p_pic'), async (req, res) => {
   }
 });
 
+// Add endpoint to get all users
+app.get('/api/users', async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(
+      'SELECT id, email, username, role, employee_number, f_name, l_name, p_pic, created_at FROM users'
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Users fetch error:', error);
+    res.status(500).json({ error: 'Server error during users fetch' });
+  }
+});
+
 app.get('/api/users/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -196,29 +209,65 @@ app.post('/api/update-leave-status', async (req, res) => {
   }
 
   try {
-    const [result] = await db.promise().query(
+    // Start a transaction to ensure data consistency
+    await db.promise().beginTransaction();
+
+    // 1. Update the leave request status
+    const [updateResult] = await db.promise().query(
       'UPDATE leave_request SET status = ? WHERE id = ?', [status, leave_request_id]
     );
 
-    if (result.affectedRows === 0) {
+    if (updateResult.affectedRows === 0) {
+      await db.promise().rollback();
       return res.status(404).json({ message: 'Leave request not found' });
     }
 
-    // Fetch updated leave request and user details
-    const [updatedLeaveRequests] = await db.promise().query(
-      'SELECT lr.*, u.f_name, u.l_name FROM leave_request lr JOIN users u ON lr.employee_id = u.id WHERE lr.id = ?', [leave_request_id]
+    // Fetch the leave request details to get employee_id for notification insertion
+    const [leaveRequestRows] = await db.promise().query(
+      'SELECT employee_id FROM leave_request WHERE id = ?', [leave_request_id]
     );
 
-    if (updatedLeaveRequests.length > 0) {
-      const updatedData = updatedLeaveRequests[0];
-      io.emit('leave_status_updated', updatedData);
-      res.json({ success: true, message: 'Leave request status updated and notification sent.', data: updatedData });
+    if (leaveRequestRows.length === 0) {
+         await db.promise().rollback();
+         return res.status(404).json({ message: 'Leave request not found after update' });
+    }
+
+    const employeeId = leaveRequestRows[0].employee_id;
+
+    // 2. Insert a notification record
+    // The database should automatically set the date and time
+    const [notificationResult] = await db.promise().query(
+      'INSERT INTO notification (user_id, leave_request_id, status) VALUES (?, ?, ?)', 
+      [employeeId, leave_request_id, status]
+    );
+
+    // 3. Fetch the newly inserted notification record with date and time
+    const [fetchedNotifications] = await db.promise().query(
+      `SELECT 
+         n.id, n.user_id, n.leave_request_id, n.status, n.date, n.time,
+         lr.leave_type, u.f_name, u.l_name
+       FROM notification n
+       JOIN leave_request lr ON n.leave_request_id = lr.id
+       JOIN users u ON lr.employee_id = u.id
+       WHERE n.id = ?`,
+      [notificationResult.insertId]
+    );
+
+    await db.promise().commit();
+
+    if (fetchedNotifications.length > 0) {
+      const notificationData = fetchedNotifications[0];
+      // Emit the notification data via socket
+      console.log('Emitting leave_status_updated with payload:', notificationData);
+      io.emit('leave_status_updated', { payload: notificationData });
+      res.json({ success: true, message: 'Leave request status updated and notification sent.', data: notificationData });
     } else {
-      // Should not happen if update was successful, but handle defensively
-      res.status(500).json({ success: false, message: 'Failed to fetch updated data after status update.' });
+      // This case should ideally not happen if insertion was successful
+      res.status(500).json({ success: false, message: 'Failed to fetch notification data after update.' });
     }
 
   } catch (error) {
+    await db.promise().rollback();
     console.error('Leave status update error:', error);
     res.status(500).json({ message: 'Server error updating leave status.' });
   }
@@ -233,7 +282,6 @@ app.get('/api/notifications/user/:userId', async (req, res) => {
   }
 
   try {
-    // Fetch notifications for the specific user, joined with relevant tables
     const query = `
       SELECT
         n.id,
@@ -243,7 +291,8 @@ app.get('/api/notifications/user/:userId', async (req, res) => {
         lr.leave_type,
         u.f_name,
         u.l_name,
-        n.created_at AS time
+        n.date,
+        n.time
       FROM
         notification n
       JOIN
@@ -253,16 +302,103 @@ app.get('/api/notifications/user/:userId', async (req, res) => {
       WHERE
         n.user_id = ?
       ORDER BY
-        n.created_at DESC
+        n.date DESC, n.time DESC
     `;
     const [notifications] = await db.promise().query(query, [userId]);
 
-    // Return the fetched notifications
     res.json(notifications);
 
   } catch (error) {
     console.error('Error fetching user notifications:', error);
     res.status(500).json({ message: 'Server error fetching notifications.' });
+  }
+});
+
+// ===== ATTENDANCE ENDPOINTS =====
+// Add POST /api/attendance endpoint
+app.post('/api/attendance', async (req, res) => {
+  const { user_id, event } = req.body;
+
+  if (!user_id || !event) {
+    return res.status(400).json({ message: 'User ID and event are required.' });
+  }
+
+  const sql = `
+    INSERT INTO attendance_record (user_id, date, day, event, time)
+    VALUES (?, CURDATE(), DAYNAME(CURDATE()), ?, CURTIME())
+  `;
+
+  try {
+    const [result] = await db.promise().query(sql, [user_id, event]);
+    res.json({ success: true, id: result.insertId });
+  } catch (error) {
+    console.error('Error inserting attendance record:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add GET /api/attendance/today endpoint
+app.get('/api/attendance/today', async (req, res) => {
+  try {
+    const sql = `
+      SELECT ar.id, ar.user_id, ar.date, ar.day, ar.event, ar.time,
+             u.employee_number, u.f_name, u.l_name
+      FROM attendance_record ar
+      JOIN users u ON ar.user_id = u.id
+      WHERE ar.date = CURDATE()
+      ORDER BY ar.time DESC
+    `;
+    const [rows] = await db.promise().query(sql);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching attendance records for today:', error);
+    res.status(500).json({ error: 'Server error during fetching attendance' });
+  }
+});
+
+// === HOLIDAYS ENDPOINTS ===
+app.get('/api/holidays', async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(
+      'SELECT id, holiday_name, date, type, is_movable, notes FROM holidays'
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching holidays:', error);
+    res.status(500).json({ error: 'Server error during fetching holidays' });
+  }
+});
+
+// Add POST /api/holidays endpoint
+app.post('/api/holidays', async (req, res) => {
+  const { holiday_name, date, type, is_movable, notes } = req.body;
+
+  if (!holiday_name || !date || !type) {
+    return res.status(400).json({ message: 'Holiday name, date, and type are required.' });
+  }
+
+  const validTypes = ['Regular', 'Special Non-Working', 'Special Working'];
+  if (!validTypes.includes(type)) {
+      return res.status(400).json({ message: `Invalid holiday type. Must be one of: ${validTypes.join(', ')}` });
+  }
+
+  const sql = `
+    INSERT INTO holidays (holiday_name, date, type, is_movable, notes)
+    VALUES (?, ?, ?, ?, ?)
+  `;
+
+  try {
+    const [result] = await db.promise().query(sql, [
+      holiday_name,
+      date,
+      type,
+      is_movable || 0,
+      notes || null
+    ]);
+    res.status(201).json({ success: true, id: result.insertId });
+  } catch (error) {
+    console.error('Error inserting holiday record:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
